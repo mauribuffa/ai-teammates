@@ -1,6 +1,7 @@
 "use client"
 
 import { useSyncExternalStore } from "react"
+import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { formatDistanceToNowStrict } from "date-fns"
@@ -8,6 +9,7 @@ import { PlusIcon, UsersIcon } from "lucide-react"
 
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
+import { ChatSearch } from "@/components/chat-search"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -45,10 +47,17 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
 
   return (
     <Sidebar>
-      <SidebarHeader className="flex-row justify-end">
+      <SidebarHeader>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" aria-label="New" />}
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="New"
+                className="self-end"
+              />
+            }
           >
             <PlusIcon />
           </DropdownMenuTrigger>
@@ -64,6 +73,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
           </DropdownMenuContent>
         </DropdownMenu>
         <BotDialog handle={botDialog} />
+        <ChatSearch chats={chats} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -72,7 +82,11 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
               const name = chat.name ?? chat.bot.name
               return (
                 <SidebarMenuItem key={chat.id}>
-                  <SidebarMenuButton size="lg" tooltip={name}>
+                  <SidebarMenuButton
+                    size="lg"
+                    tooltip={name}
+                    render={<Link href={`/chats/${chat.id}`} />}
+                  >
                     <ChatAvatar seed={chat.bot.avatar} />
                     <div className="grid min-w-0 flex-1 leading-tight">
                       <div className="flex items-baseline gap-2">
