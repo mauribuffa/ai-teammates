@@ -1,6 +1,7 @@
 "use server"
 
 import { auth } from "@clerk/nextjs/server"
+import { and, eq, inArray } from "drizzle-orm"
 import { nanoid } from "nanoid"
 import { revalidatePath } from "next/cache"
 import type { z } from "zod"
@@ -29,6 +30,50 @@ export async function createBot(input: z.input<typeof insertBotSchema>) {
   })
 
   revalidatePath("/")
+
+  return bot
+}
+
+export async function updateBot(id: string, input: z.input<typeof insertBotSchema>) {
+  const { userId } = await auth.protect()
+
+  const values = insertBotSchema.parse(input)
+
+  const [bot] = await db
+    .update(bots)
+    .set({ ...values, instructions: values.instructions || null })
+    .where(and(eq(bots.id, id), eq(bots.userId, userId)))
+    .returning()
+  if (!bot) throw new Error("Bot not found")
+
+  // The bot's name and face show in the sidebar and chat headers.
+  revalidatePath("/", "layout")
+
+  return bot
+}
+
+// Deletes the bot together with its direct chats, which would be left empty.
+export async function deleteBot(id: string) {
+  const { userId } = await auth.protect()
+
+  const bot = await db.transaction(async (tx) => {
+    const directChats = tx
+      .select({ id: chatMembers.chatId })
+      .from(chatMembers)
+      .innerJoin(chats, eq(chats.id, chatMembers.chatId))
+      .where(and(eq(chatMembers.botId, id), eq(chats.kind, "direct")))
+    await tx
+      .delete(chats)
+      .where(and(inArray(chats.id, directChats), eq(chats.userId, userId)))
+    const [bot] = await tx
+      .delete(bots)
+      .where(and(eq(bots.id, id), eq(bots.userId, userId)))
+      .returning()
+    if (!bot) throw new Error("Bot not found")
+    return bot
+  })
+
+  revalidatePath("/", "layout")
 
   return bot
 }

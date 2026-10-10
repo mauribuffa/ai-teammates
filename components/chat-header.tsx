@@ -1,16 +1,13 @@
 import { MonitorIcon } from "lucide-react"
 
-import { ChatAvatar } from "@/components/chat-avatar"
+import { BotDialog } from "@/components/bot-dialog"
 import { Button } from "@/components/ui/button"
 import type { ChatDetail } from "@/queries/chats"
 
 export function ChatHeader({ chat }: { chat: ChatDetail }) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-      <ChatAvatar seed={chat.bot.avatar} className="size-6" />
-      <h1 className="truncate text-sm font-medium">
-        {chat.name ?? chat.bot.name}
-      </h1>
+      <BotDialog bot={chat.bot} />
       {/* Placeholder: does nothing yet. */}
       <Button
         variant="ghost"

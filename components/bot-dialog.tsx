@@ -1,16 +1,28 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import type { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { PlusIcon, ShuffleIcon } from "lucide-react"
+import { PlusIcon, ShuffleIcon, Trash2Icon } from "lucide-react"
 import { nanoid } from "nanoid"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import type { z } from "zod"
 
-import { createBot } from "@/actions/bot"
+import { createBot, deleteBot, updateBot } from "@/actions/bot"
 import { ChatAvatar } from "@/components/chat-avatar"
 import { insertBotSchema } from "@/db/schema"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -66,10 +78,21 @@ const presets = [
 
 const emptyValues = { name: "", avatar: "", job: "", instructions: "" }
 
+type EditableBot = z.output<typeof insertBotSchema> & { id: string }
+
 // Pass a handle to open the dialog from elsewhere (e.g. a menu item) instead
-// of rendering its own trigger button.
-function BotDialog({ handle }: { handle?: DialogPrimitive.Handle<unknown> }) {
+// of rendering its own trigger button. Pass a bot to edit it instead of
+// creating a new one; the trigger then shows its face and name.
+function BotDialog({
+  handle,
+  bot,
+}: {
+  handle?: DialogPrimitive.Handle<unknown>
+  bot?: EditableBot
+}) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const form = useForm({
     resolver: zodResolver(insertBotSchema),
     defaultValues: emptyValues,
@@ -77,34 +100,81 @@ function BotDialog({ handle }: { handle?: DialogPrimitive.Handle<unknown> }) {
   const avatar = useWatch({ control: form.control, name: "avatar" })
 
   function handleOpenChange(next: boolean) {
-    // Start every new bot with a blank form and a fresh face.
-    if (next) form.reset({ ...emptyValues, avatar: nanoid() })
+    // Start every edit from the saved bot, and every new bot with a blank
+    // form and a fresh face.
+    if (next) {
+      form.reset(
+        bot
+          ? {
+              name: bot.name,
+              avatar: bot.avatar,
+              job: bot.job,
+              instructions: bot.instructions,
+            }
+          : { ...emptyValues, avatar: nanoid() },
+      )
+    }
     setOpen(next)
   }
 
   async function onSubmit(values: z.output<typeof insertBotSchema>) {
     try {
-      const bot = await createBot(values)
-      setOpen(false)
-      toast.add({ title: `${bot.name} is ready`, type: "success" })
+      if (bot) {
+        const updated = await updateBot(bot.id, values)
+        setOpen(false)
+        toast.add({ title: `${updated.name} is updated`, type: "success" })
+      } else {
+        const created = await createBot(values)
+        setOpen(false)
+        toast.add({ title: `${created.name} is ready`, type: "success" })
+      }
     } catch {
-      toast.add({ title: "Couldn't create the bot", type: "error" })
+      toast.add({
+        title: bot ? "Couldn't update the bot" : "Couldn't create the bot",
+        type: "error",
+      })
+    }
+  }
+
+  async function handleDelete() {
+    if (!bot) return
+    setDeleting(true)
+    try {
+      const deleted = await deleteBot(bot.id)
+      setOpen(false)
+      // Its chats are gone, so leave the page that showed one.
+      router.push("/")
+      toast.add({ title: `${deleted.name} is deleted`, type: "success" })
+    } catch {
+      toast.add({ title: "Couldn't delete the bot", type: "error" })
+    } finally {
+      setDeleting(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} handle={handle}>
-      {!handle && (
-        <DialogTrigger render={<Button variant="secondary" />}>
-          <PlusIcon data-icon="inline-start" />
-          Create a new bot
-        </DialogTrigger>
-      )}
+      {!handle &&
+        (bot ? (
+          <DialogTrigger
+            render={<Button variant="ghost" size="sm" className="-ms-2 min-w-0" />}
+          >
+            <ChatAvatar seed={bot.avatar} className="size-6" />
+            <span className="truncate font-medium">{bot.name}</span>
+          </DialogTrigger>
+        ) : (
+          <DialogTrigger render={<Button variant="secondary" />}>
+            <PlusIcon data-icon="inline-start" />
+            Create a new bot
+          </DialogTrigger>
+        ))}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New bot</DialogTitle>
+          <DialogTitle>{bot ? "Edit bot" : "New bot"}</DialogTitle>
           <DialogDescription>
-            Give it a face, a name, and a job to do.
+            {bot
+              ? "Change its face, name, or how it does its job."
+              : "Give it a face, a name, and a job to do."}
           </DialogDescription>
         </DialogHeader>
         <form id="bot-form" onSubmit={form.handleSubmit(onSubmit)}>
@@ -210,6 +280,35 @@ function BotDialog({ handle }: { handle?: DialogPrimitive.Handle<unknown> }) {
           </FieldGroup>
         </form>
         <DialogFooter>
+          {bot && (
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={<Button variant="destructive" className="sm:me-auto" />}
+              >
+                <Trash2Icon data-icon="inline-start" />
+                Delete
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {bot.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This also deletes its chat. It can&apos;t be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                  >
+                    {deleting && <Spinner data-icon="inline-start" />}
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
           <DialogClose render={<Button variant="outline" />}>
             Cancel
           </DialogClose>
@@ -221,7 +320,7 @@ function BotDialog({ handle }: { handle?: DialogPrimitive.Handle<unknown> }) {
             {form.formState.isSubmitting && (
               <Spinner data-icon="inline-start" />
             )}
-            Create bot
+            {bot ? "Save changes" : "Create bot"}
           </Button>
         </DialogFooter>
       </DialogContent>

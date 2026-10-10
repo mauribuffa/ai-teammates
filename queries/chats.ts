@@ -33,7 +33,8 @@ export async function getChats() {
 
 export type Chat = Awaited<ReturnType<typeof getChats>>[number]
 
-// One of the signed-in user's chats with the bot that represents it, or null
+// One of the signed-in user's chats with the bot that represents it (with its
+// editable fields), or null
 // if it doesn't exist or belongs to someone else. Group chats aren't handled
 // yet and fall back to their first bot.
 export async function getChat(chatId: string) {
@@ -47,7 +48,11 @@ export async function getChat(chatId: string) {
         columns: {},
         orderBy: (m, { asc }) => asc(m.joinedAt),
         limit: 1,
-        with: { bot: { columns: { name: true, avatar: true } } },
+        with: {
+          bot: {
+            columns: { id: true, name: true, avatar: true, job: true, instructions: true },
+          },
+        },
       },
     },
   })
