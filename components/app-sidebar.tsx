@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 import Link from "next/link"
+import { useParams } from "next/navigation"
 import { UserButton } from "@clerk/nextjs"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { formatDistanceToNowStrict } from "date-fns"
@@ -28,7 +29,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import type { Chat } from "@/queries/bots"
+import type { Chat } from "@/queries/chats"
 
 const subscribe = () => () => {}
 
@@ -45,6 +46,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
     () => true,
     () => false
   )
+  const { chatId } = useParams<{ chatId?: string }>()
 
   return (
     <Sidebar collapsible="icon">
@@ -86,6 +88,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
                   <SidebarMenuButton
                     size="lg"
                     tooltip={name}
+                    isActive={chat.id === chatId}
                     render={<Link href={`/chats/${chat.id}`} />}
                   >
                     <ChatAvatar seed={chat.bot.avatar} />

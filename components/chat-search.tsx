@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/command"
 import { Kbd } from "@/components/ui/kbd"
 import { useSidebar } from "@/components/ui/sidebar"
-import type { Chat } from "@/queries/bots"
+import type { Chat } from "@/queries/chats"
 
 export function ChatSearch({ chats }: { chats: Chat[] }) {
   const router = useRouter()
