@@ -26,6 +26,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
 } from "@/components/ui/sidebar"
 import type { Chat } from "@/queries/bots"
 
@@ -46,7 +47,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
   )
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader>
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -113,7 +114,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
                 div wrapper and Clerk's trigger fills it edge to edge. */}
             <SidebarMenuButton
               render={<div />}
-              className="p-0 has-focus-visible:ring-2"
+              className="p-0 group-data-[collapsible=icon]:p-0! has-focus-visible:ring-2"
             >
               {/* Clerk's styles are unlayered, so `!` is needed to beat them. */}
               {hydrated && (
@@ -123,12 +124,12 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
                     elements: {
                       rootBox: "size-full!",
                       userButtonTrigger:
-                        "size-full! rounded-[inherit]! p-2! bg-transparent! text-inherit! shadow-none! outline-none!",
+                        "size-full! rounded-[inherit]! p-2! group-data-[collapsible=icon]:p-1! bg-transparent! text-inherit! shadow-none! outline-none!",
                       userButtonBox:
                         "w-full! flex-row-reverse! justify-end! gap-2!",
                       userButtonAvatarBox: "size-6! rounded-full!",
                       userButtonOuterIdentifier:
-                        "truncate ps-0! text-sm! font-normal! text-inherit!",
+                        "truncate ps-0! text-sm! font-normal! text-inherit! group-data-[collapsible=icon]:hidden!",
                     },
                   }}
                 />
@@ -137,6 +138,7 @@ export function AppSidebar({ chats }: { chats: Chat[] }) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }

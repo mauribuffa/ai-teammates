@@ -16,11 +16,15 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Kbd } from "@/components/ui/kbd"
+import { useSidebar } from "@/components/ui/sidebar"
 import type { Chat } from "@/queries/bots"
 
 export function ChatSearch({ chats }: { chats: Chat[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const { state, isMobile } = useSidebar()
+  // The mobile sheet is always expanded, whatever the desktop state.
+  const collapsed = state === "collapsed" && !isMobile
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -35,16 +39,28 @@ export function ChatSearch({ chats }: { chats: Chat[] }) {
 
   return (
     <>
-      {/* Looks like the Input (its default classes), keeps the outline hover. */}
-      <Button
-        variant="outline"
-        onClick={() => setOpen(true)}
-        className="h-8 w-full min-w-0 justify-start rounded-lg border-input bg-transparent px-2.5 py-1 text-base font-normal text-muted-foreground md:text-sm dark:bg-input/30"
-      >
-        <SearchIcon />
-        Search
-        <Kbd className="ms-auto">⌘K</Kbd>
-      </Button>
+      {collapsed ? (
+        // Matches the other icon buttons of the collapsed sidebar.
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Search"
+          onClick={() => setOpen(true)}
+        >
+          <SearchIcon />
+        </Button>
+      ) : (
+        // Looks like the Input (its default classes), keeps the outline hover.
+        <Button
+          variant="outline"
+          onClick={() => setOpen(true)}
+          className="h-8 w-full min-w-0 justify-start rounded-lg border-input bg-transparent px-2.5 py-1 text-base font-normal text-muted-foreground md:text-sm dark:bg-input/30"
+        >
+          <SearchIcon />
+          Search
+          <Kbd className="ms-auto">⌘K</Kbd>
+        </Button>
+      )}
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
