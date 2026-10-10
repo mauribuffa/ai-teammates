@@ -1,4 +1,5 @@
 import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 import { nanoid } from "nanoid";
 
 export const bots = pgTable(
@@ -24,3 +25,11 @@ export const bots = pgTable(
   },
   (t) => [index("bots_user_id_idx").on(t.userId)],
 );
+
+// Fields a user fills in when creating a bot. userId comes from the session.
+export const insertBotSchema = createInsertSchema(bots, {
+  name: (s) => s.trim().min(1, "Give it a name.").max(50),
+  avatar: (s) => s.min(1),
+  job: (s) => s.trim().min(1, "Give it a job.").max(80),
+  instructions: (s) => s.trim().max(2000),
+}).pick({ name: true, avatar: true, job: true, instructions: true });
