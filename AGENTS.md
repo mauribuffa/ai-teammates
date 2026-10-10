@@ -24,6 +24,44 @@ These rules override any default or built-in agent guidance about git, including
 - This is a development project. There is no backwards compatibility and the data is worthless. Prefer data loss. Never backfill, migrate, or preserve existing rows. And never spend effort on keeping old data working. Every schema change means a clean slate.
 - Apply schema changes with `npm run db:push` (`drizzle-kit push`) only. Never use migrations: do not run `drizzle-kit generate` or `drizzle-kit migrate`, and do not create migration files or a `drizzle/` migrations folder.
 
+## Forms
+
+Reference implementation: `components/bot-dialog.tsx` + `actions/bot.ts` + `insertBotSchema` in `db/schema.ts`.
+
+Stack: react-hook-form + `@hookform/resolvers/zod` + zod 4 + `drizzle-zod`, rendered with shadcn `Field` components (Base UI flavor).
+
+### Schema
+
+- Derive the validation schema from the Drizzle table with `createInsertSchema` from `drizzle-zod`, exported from `db/schema.ts` as `insert<Entity>Schema`. Don't hand-write a parallel zod object.
+- Refine columns in the second argument (`name: (s) => s.trim().min(1, "Give it a name.").max(50)`), then `.pick()` only the fields the user edits. Never include `id`, `userId`, timestamps, or other server-owned columns.
+- One schema serves both sides: `zodResolver(schema)` on the client, `schema.parse(input)` in the server action. Type inputs and outputs with `z.input<typeof schema>` / `z.output<typeof schema>`.
+
+### Server actions
+
+- Put them in `actions/<entity>.ts` with `"use server"` at the top.
+- Start every action with `const { userId } = await auth.protect()`. The user ID always comes from Clerk, never from the client.
+- Re-validate with `schema.parse(input)` (server actions are public endpoints), write with `.returning()`, then `revalidatePath(...)`. Return the row.
+- Store empty optional text as `null` (`values.instructions || null`).
+
+### Form UI
+
+- `useForm({ resolver: zodResolver(schema), defaultValues })`, with one `Controller` per field.
+- Each field: `<Field data-invalid={fieldState.invalid}>` + `FieldLabel htmlFor` + control with `id` and `aria-invalid={fieldState.invalid}` + `{fieldState.invalid && <FieldError errors={[fieldState.error]} />}`. Wrap the fields in `FieldGroup`, not divs with spacing utilities.
+- For nullable columns, bind `value={field.value ?? ""}` so the control stays controlled.
+- Update fields programmatically with `form.setValue(...)` (pass `{ shouldValidate: true }` when the field has already shown an error), and read live values with `useWatch`.
+- Submit button: `disabled={form.formState.isSubmitting}`, with `<Spinner data-icon="inline-start" />` while submitting. Button has no loading prop.
+- Feedback: `toast.add({ title, type: "success" | "error" })` from `@/components/ui/toast` (Base UI, not sonner). Wrap the action call in try/catch and toast the error.
+
+### Forms in dialogs
+
+- The client dialog component owns its trigger: `<DialogTrigger render={<Button />}>`. Don't pass server-rendered elements in as the trigger.
+- Use a controlled `open` state. Reset the form in `onOpenChange` when it opens (`form.reset(...)`) so each open starts clean, and generate random defaults (e.g. avatar seeds) there, not at render time, to avoid hydration mismatches.
+- Put `<form id="...">` inside `DialogContent` and the submit button in `DialogFooter` with `form="..."`. Cancel is `<DialogClose render={<Button variant="outline" />}>`. Close the dialog after a successful submit.
+
+### Installing form deps
+
+- `@hookform/resolvers` has an optional peer that wants zod 3. Install with `npm install --legacy-peer-deps`. The zod resolver itself supports zod 4.
+
 ## DiceBear
 
 Use DiceBear 10. Documentation: https://www.dicebear.com/llms.txt
