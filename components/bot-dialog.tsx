@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import type { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { PlusIcon, ShuffleIcon } from "lucide-react"
 import { nanoid } from "nanoid"
@@ -65,7 +66,9 @@ const presets = [
 
 const emptyValues = { name: "", avatar: "", job: "", instructions: "" }
 
-function BotDialog() {
+// Pass a handle to open the dialog from elsewhere (e.g. a menu item) instead
+// of rendering its own trigger button.
+function BotDialog({ handle }: { handle?: DialogPrimitive.Handle<unknown> }) {
   const [open, setOpen] = useState(false)
   const form = useForm({
     resolver: zodResolver(insertBotSchema),
@@ -90,11 +93,13 @@ function BotDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button variant="secondary" />}>
-        <PlusIcon data-icon="inline-start" />
-        Create a new bot
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={handleOpenChange} handle={handle}>
+      {!handle && (
+        <DialogTrigger render={<Button variant="secondary" />}>
+          <PlusIcon data-icon="inline-start" />
+          Create a new bot
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New bot</DialogTitle>
