@@ -5,7 +5,7 @@ import {
   useLoadTranscript,
   useTriggerChatTransport,
 } from "@trigger.dev/sdk/chat/react"
-import type { UIMessage } from "ai"
+import { isToolUIPart } from "ai"
 
 import {
   loadTranscript,
@@ -19,6 +19,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
+import { Image } from "@/components/ai-elements/image"
 import {
   Message,
   MessageContent,
@@ -32,9 +33,36 @@ import {
   PromptInputTextarea,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool"
 import type { chatAgent } from "@/trigger/chat"
+import type { ChatUIMessage } from "@/trigger/tools"
 
 type Transport = ReturnType<typeof useTriggerChatTransport>
+type ToolPart = Extract<
+  ChatUIMessage["parts"][number],
+  { type: `tool-${string}` }
+>
+
+const toolTitles: Record<ToolPart["type"], string> = {
+  "tool-bash": "Run command",
+  "tool-readFile": "Read file",
+  "tool-writeFile": "Write file",
+  "tool-listFiles": "List files",
+  "tool-mouseClick": "Click",
+  "tool-mouseMove": "Move mouse",
+  "tool-mouseDrag": "Drag",
+  "tool-mouseScroll": "Scroll",
+  "tool-keyboardType": "Type",
+  "tool-keyboardPress": "Press key",
+  "tool-viewScreen": "Look at screen",
+  "tool-showScreen": "Show screen",
+}
 
 export function Chat({ chatId }: { chatId: string }) {
   const transport = useTriggerChatTransport<typeof chatAgent>({
@@ -56,7 +84,8 @@ export function Chat({ chatId }: { chatId: string }) {
       key={chatId}
       chatId={chatId}
       transport={transport}
-      initialMessages={messages}
+      // The transcript loader is untyped; the agent writes ChatUIMessages.
+      initialMessages={messages as ChatUIMessage[]}
     />
   )
 }
@@ -68,9 +97,9 @@ function ChatView({
 }: {
   chatId: string
   transport: Transport
-  initialMessages: UIMessage[]
+  initialMessages: ChatUIMessage[]
 }) {
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop } = useChat<ChatUIMessage>({
     id: chatId,
     messages: initialMessages,
     transport,
@@ -91,13 +120,19 @@ function ChatView({
             messages.map((message) => (
               <Message from={message.role} key={message.id}>
                 <MessageContent>
-                  {message.parts.map((part, i) =>
-                    part.type === "text" ? (
-                      <MessageResponse key={`${message.id}-${i}`}>
-                        {part.text}
-                      </MessageResponse>
-                    ) : null
-                  )}
+                  {message.parts.map((part, i) => {
+                    if (part.type === "text") {
+                      return (
+                        <MessageResponse key={`${message.id}-${i}`}>
+                          {part.text}
+                        </MessageResponse>
+                      )
+                    }
+                    if (isToolUIPart(part) && part.type !== "dynamic-tool") {
+                      return <ToolCall key={part.toolCallId} part={part} />
+                    }
+                    return null
+                  })}
                 </MessageContent>
               </Message>
             ))
@@ -116,5 +151,40 @@ function ChatView({
         </PromptInput>
       </div>
     </div>
+  )
+}
+
+function ToolCall({ part }: { part: ToolPart }) {
+  // Screenshots are base64 images, so they never go through ToolOutput.
+  // viewScreen's is for the agent alone; showScreen's is shown to the user.
+  const isScreenshot =
+    part.type === "tool-viewScreen" || part.type === "tool-showScreen"
+
+  return (
+    <>
+      <Tool>
+        <ToolHeader
+          type={part.type}
+          state={part.state}
+          title={toolTitles[part.type]}
+        />
+        <ToolContent>
+          {!isScreenshot && <ToolInput input={part.input} />}
+          <ToolOutput
+            output={isScreenshot ? undefined : part.output}
+            errorText={part.errorText}
+          />
+        </ToolContent>
+      </Tool>
+      {part.type === "tool-showScreen" && part.state === "output-available" && (
+        <Image
+          base64={part.output.base64}
+          mediaType={part.output.mediaType}
+          uint8Array={new Uint8Array()}
+          alt="Screenshot of the sandbox desktop"
+          className="border"
+        />
+      )}
+    </>
   )
 }
