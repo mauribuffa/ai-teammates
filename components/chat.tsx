@@ -6,6 +6,7 @@ import {
   useTriggerChatTransport,
 } from "@trigger.dev/sdk/chat/react"
 import { isToolUIPart } from "ai"
+import { useState } from "react"
 
 import {
   loadTranscript,
@@ -13,6 +14,7 @@ import {
   startChatSession,
 } from "@/actions/chat"
 
+import { ChatAvatar } from "@/components/chat-avatar"
 import {
   Conversation,
   ConversationContent,
@@ -29,8 +31,14 @@ import {
   PromptInput,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
   PromptInputSubmit,
   PromptInputTextarea,
+  PromptInputTools,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
@@ -40,10 +48,12 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
+import type { ChatDetail } from "@/queries/chats"
 import type { chatAgent } from "@/trigger/chat"
 import type { ChatUIMessage } from "@/trigger/tools"
 
 type Transport = ReturnType<typeof useTriggerChatTransport>
+type Bot = ChatDetail["bots"][number]
 type ToolPart = Extract<
   ChatUIMessage["parts"][number],
   { type: `tool-${string}` }
@@ -64,12 +74,16 @@ const toolTitles: Record<ToolPart["type"], string> = {
   "tool-showScreen": "Show screen",
 }
 
-export function Chat({ chatId }: { chatId: string }) {
+export function Chat({ chatId, bots }: { chatId: string; bots: Bot[] }) {
+  // The bot that answers the next message. Sent with every turn, so picking
+  // another one switches who replies.
+  const [botId, setBotId] = useState(bots[0].id)
   const transport = useTriggerChatTransport<typeof chatAgent>({
     task: "chat",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
     startSession: ({ chatId, clientData }) =>
       startChatSession({ chatId, clientData }),
+    clientData: { botId },
   })
   const { messages, isLoading } = useLoadTranscript(chatId, loadTranscript, {
     transport,
@@ -84,6 +98,9 @@ export function Chat({ chatId }: { chatId: string }) {
       key={chatId}
       chatId={chatId}
       transport={transport}
+      bots={bots}
+      botId={botId}
+      onBotChange={setBotId}
       // The transcript loader is untyped; the agent writes ChatUIMessages.
       initialMessages={messages as ChatUIMessage[]}
     />
@@ -93,10 +110,16 @@ export function Chat({ chatId }: { chatId: string }) {
 function ChatView({
   chatId,
   transport,
+  bots,
+  botId,
+  onBotChange,
   initialMessages,
 }: {
   chatId: string
   transport: Transport
+  bots: Bot[]
+  botId: string
+  onBotChange: (botId: string) => void
   initialMessages: ChatUIMessage[]
 }) {
   const { messages, sendMessage, status, stop } = useChat<ChatUIMessage>({
@@ -145,12 +168,70 @@ function ChatView({
           <PromptInputBody>
             <PromptInputTextarea />
           </PromptInputBody>
-          <PromptInputFooter className="justify-end">
+          <PromptInputFooter>
+            <PromptInputTools>
+              {bots.length > 1 && (
+                <BotSelect bots={bots} value={botId} onChange={onBotChange} />
+              )}
+            </PromptInputTools>
             <PromptInputSubmit status={status} onStop={stop} />
           </PromptInputFooter>
         </PromptInput>
       </div>
     </div>
+  )
+}
+
+function BotSelect({
+  bots,
+  value,
+  onChange,
+}: {
+  bots: Bot[]
+  value: string
+  onChange: (botId: string) => void
+}) {
+  const findBot = (id: string) => bots.find((bot) => bot.id === id)
+
+  return (
+    <PromptInputSelect
+      value={value}
+      // The wrapper loses Select's value type; the values are bot IDs.
+      onValueChange={(next) => typeof next === "string" && onChange(next)}
+    >
+      <PromptInputSelectTrigger size="sm" aria-label="Bot to talk to">
+        <PromptInputSelectValue>
+          {(id: string) => {
+            const bot = findBot(id)
+            return (
+              bot && (
+                <>
+                  <ChatAvatar seed={bot.avatar} className="size-5" />
+                  {bot.name}
+                </>
+              )
+            )
+          }}
+        </PromptInputSelectValue>
+      </PromptInputSelectTrigger>
+      {/* Sized to the items, which are wider than the trigger, so the job
+          doesn't run under the check. */}
+      <PromptInputSelectContent
+        alignItemWithTrigger={false}
+        side="top"
+        className="w-auto min-w-(--anchor-width)"
+      >
+        {bots.map((bot) => (
+          <PromptInputSelectItem key={bot.id} value={bot.id}>
+            <ChatAvatar seed={bot.avatar} className="size-8" />
+            <div className="grid leading-tight">
+              <span className="font-medium">{bot.name}</span>
+              <span className="text-xs text-muted-foreground">{bot.job}</span>
+            </div>
+          </PromptInputSelectItem>
+        ))}
+      </PromptInputSelectContent>
+    </PromptInputSelect>
   )
 }
 

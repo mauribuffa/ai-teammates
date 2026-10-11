@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { SearchIcon } from "lucide-react"
 
-import { ChatAvatar } from "@/components/chat-avatar"
+import { GroupAvatar } from "@/components/chat-avatar"
 import { Button } from "@/components/ui/button"
 import {
   CommandDialog,
@@ -73,7 +73,7 @@ export function ChatSearch({ chats }: { chats: Chat[] }) {
             <CommandEmpty>No chats found.</CommandEmpty>
             <CommandGroup heading="Chats">
               {chats.map((chat) => {
-                const name = chat.name ?? chat.bot.name
+                const name = chat.name ?? chat.bots[0].name
                 return (
                   <CommandItem
                     key={chat.id}
@@ -83,7 +83,7 @@ export function ChatSearch({ chats }: { chats: Chat[] }) {
                       router.push(`/chats/${chat.id}`)
                     }}
                   >
-                    <ChatAvatar seed={chat.bot.avatar} className="size-6" />
+                    <GroupAvatar bots={chat.bots} className="size-6" />
                     <span className="truncate">{name}</span>
                   </CommandItem>
                 )

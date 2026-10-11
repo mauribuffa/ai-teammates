@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import { index, pgEnum, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { nanoid } from "nanoid";
+import { z } from "zod";
 
 export const bots = pgTable(
   "bots",
@@ -81,3 +82,11 @@ export const insertBotSchema = createInsertSchema(bots, {
   job: (s) => s.trim().min(1, "Give it a job.").max(80),
   instructions: (s) => s.trim().max(2000),
 }).pick({ name: true, avatar: true, job: true, instructions: true });
+
+// Fields a user fills in when creating a group chat. The members aren't a
+// column of chats, so they're added on top.
+export const insertGroupChatSchema = createInsertSchema(chats, {
+  name: z.string().trim().min(1, "Give it a name.").max(50),
+})
+  .pick({ name: true })
+  .extend({ botIds: z.array(z.string()).min(2, "Pick at least two bots.") });

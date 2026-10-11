@@ -3,8 +3,9 @@ import { Daytona, type Sandbox } from "@daytona/sdk"
 import { parseEnv } from "@neon/env"
 import { chat } from "@trigger.dev/sdk/ai"
 import { stepCountIs } from "ai"
-import { asc, eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/node-postgres"
+import { z } from "zod"
 
 import * as schema from "@/db/schema"
 import config from "@/neon"
@@ -21,27 +22,28 @@ const daytona = new Daytona({
   apiUrl: process.env.DAYTONA_API_URL,
 })
 
-// The bot that represents the chat. Group chats aren't handled yet and fall
-// back to their first bot.
-async function getChatBot(chatId: string) {
+// The bot picked to answer this turn, which must be a member of the chat.
+async function getChatBot(chatId: string, botId: string) {
   const member = await db.query.chatMembers.findFirst({
-    where: eq(schema.chatMembers.chatId, chatId),
-    orderBy: asc(schema.chatMembers.joinedAt),
+    where: and(
+      eq(schema.chatMembers.chatId, chatId),
+      eq(schema.chatMembers.botId, botId)
+    ),
     with: { bot: true },
   })
-  if (!member) throw new Error(`Chat ${chatId} has no bot`)
+  if (!member) throw new Error(`Bot ${botId} isn't in chat ${chatId}`)
   return member.bot
 }
 
-// Resolves the chat bot's sandbox and its desktop on first use, at most once
-// each. Called per turn, since the sandbox stops itself when idle.
-function lazySandbox(chatId: string) {
+// Resolves the bot's sandbox and its desktop on first use, at most once each.
+// Called per turn, since the sandbox stops itself when idle.
+function lazySandbox(chatId: string, botId: string) {
   let sandbox: Promise<Sandbox> | undefined
   let desktop: Promise<Sandbox> | undefined
 
   const getSandbox = () =>
     (sandbox ??= (async () => {
-      const { sandboxId } = await getChatBot(chatId)
+      const { sandboxId } = await getChatBot(chatId, botId)
       if (!sandboxId) throw new Error("This bot has no sandbox.")
       const sandbox = await daytona.get(sandboxId)
       if (sandbox.state !== "started") await sandbox.start()
@@ -78,19 +80,25 @@ function systemPrompt(bot: typeof schema.bots.$inferSelect) {
 }
 
 // The conversation is kept in the default transcript storage, keyed by chatId.
-export const chatAgent = chat.withUIMessage<ChatUIMessage>().agent({
-  id: "chat",
-  tools: ({ chatId }) => sandboxTools(lazySandbox(chatId)),
-  // Loaded every turn so edits to the bot apply to the next message.
-  onTurnStart: async ({ chatId }) => {
-    chat.prompt.set(systemPrompt(await getChatBot(chatId)))
-  },
-  run: async ({ messages, tools, signal, streamText }) =>
-    streamText({
-      model: anthropic("claude-sonnet-5-5"),
-      messages,
-      tools,
-      abortSignal: signal,
-      stopWhen: stepCountIs(50),
-    }),
-})
+// The client sends the bot to talk to with every turn, so in a group chat
+// each turn can be answered by a different bot, with its own prompt and sandbox.
+export const chatAgent = chat
+  .withUIMessage<ChatUIMessage>()
+  .withClientData({ schema: z.object({ botId: z.string() }) })
+  .agent({
+    id: "chat",
+    tools: ({ chatId, clientData }) =>
+      sandboxTools(lazySandbox(chatId, clientData!.botId)),
+    // Loaded every turn so edits to the bot apply to the next message.
+    onTurnStart: async ({ chatId, clientData }) => {
+      chat.prompt.set(systemPrompt(await getChatBot(chatId, clientData!.botId)))
+    },
+    run: async ({ messages, tools, signal, streamText }) =>
+      streamText({
+        model: anthropic("claude-sonnet-5-5"),
+        messages,
+        tools,
+        abortSignal: signal,
+        stopWhen: stepCountIs(50),
+      }),
+  })
