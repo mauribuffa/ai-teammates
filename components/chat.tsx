@@ -72,6 +72,7 @@ const toolTitles: Record<ToolPart["type"], string> = {
   "tool-keyboardPress": "Press key",
   "tool-viewScreen": "Look at screen",
   "tool-showScreen": "Show screen",
+  "tool-handoff": "Hand off",
 }
 
 export function Chat({ chatId, bots }: { chatId: string; bots: Bot[] }) {
@@ -126,6 +127,21 @@ function ChatView({
     id: chatId,
     messages: initialMessages,
     transport,
+    // A bot that hands off ends its turn; switch to the teammate and ask for
+    // their turn, with them as the bot.
+    onFinish: ({ message, isAbort, isError }) => {
+      if (isAbort || isError) return
+      const handoff = message.parts.findLast(
+        (part) => part.type === "tool-handoff"
+      )
+      if (handoff?.state !== "output-available") return
+      const { botId } = handoff.output
+      onBotChange(botId)
+      sendMessage(undefined, {
+        body: { action: { type: "handoff" } },
+        metadata: { botId },
+      })
+    },
   })
 
   function handleSubmit(message: PromptInputMessage) {
@@ -140,25 +156,37 @@ function ChatView({
           {messages.length === 0 ? (
             <ConversationEmptyState />
           ) : (
-            messages.map((message) => (
-              <Message from={message.role} key={message.id}>
-                <MessageContent>
-                  {message.parts.map((part, i) => {
-                    if (part.type === "text") {
-                      return (
-                        <MessageResponse key={`${message.id}-${i}`}>
-                          {part.text}
-                        </MessageResponse>
-                      )
-                    }
-                    if (isToolUIPart(part) && part.type !== "dynamic-tool") {
-                      return <ToolCall key={part.toolCallId} part={part} />
-                    }
-                    return null
-                  })}
-                </MessageContent>
-              </Message>
-            ))
+            messages.map((message) => {
+              // Group chats show which bot wrote each reply.
+              const author =
+                bots.length > 1 &&
+                message.role === "assistant" &&
+                bots.find((bot) => bot.id === message.metadata?.botId)
+              return (
+                <Message
+                  from={message.role}
+                  key={message.id}
+                  className={author ? "flex-row items-start" : undefined}
+                >
+                  {author && <ChatAvatar seed={author.avatar} />}
+                  <MessageContent>
+                    {message.parts.map((part, i) => {
+                      if (part.type === "text") {
+                        return (
+                          <MessageResponse key={`${message.id}-${i}`}>
+                            {part.text}
+                          </MessageResponse>
+                        )
+                      }
+                      if (isToolUIPart(part) && part.type !== "dynamic-tool") {
+                        return <ToolCall key={part.toolCallId} part={part} />
+                      }
+                      return null
+                    })}
+                  </MessageContent>
+                </Message>
+              )
+            })
           )}
         </ConversationContent>
         <ConversationScrollButton />

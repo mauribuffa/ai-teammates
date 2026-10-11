@@ -1,6 +1,5 @@
 import type { Sandbox } from "@daytona/sdk"
-import type { InferChatUIMessageFromTools } from "@trigger.dev/sdk/ai"
-import { tool } from "ai"
+import { tool, type InferUITools, type UIDataTypes, type UIMessage } from "ai"
 import { z } from "zod"
 
 // Keeps tool output from flooding the model's context.
@@ -227,6 +226,38 @@ export function sandboxTools({
   }
 }
 
-export type ChatUIMessage = InferChatUIMessageFromTools<
-  ReturnType<typeof sandboxTools>
+// Lets a bot in a group chat pass the request to a teammate. It only names
+// the teammate; the client then asks for a turn as them.
+export function handoffTool(teammates: { id: string; name: string }[]) {
+  return tool({
+    description:
+      "Hand the person's latest request to a teammate in this group chat whose job fits it better. " +
+      "They answer next, in your place, so call this instead of answering and write nothing else.",
+    inputSchema: z.object({
+      botId: z.string().describe("The teammate's ID."),
+      reason: z
+        .string()
+        .describe(
+          "One sentence on why this is the teammate's job, for them to read."
+        ),
+    }),
+    execute: async ({ botId }) => {
+      const teammate = teammates.find((t) => t.id === botId)
+      if (!teammate) throw new Error(`No teammate has the ID ${botId}.`)
+      return { botId: teammate.id, name: teammate.name }
+    },
+  })
+}
+
+// Group chats add handoff to the sandbox tools.
+export type ChatTools = ReturnType<typeof sandboxTools> & {
+  handoff?: ReturnType<typeof handoffTool>
+}
+
+// Assistant messages carry the bot that wrote them, since in group chats
+// each turn can be answered by a different bot.
+export type ChatUIMessage = UIMessage<
+  { botId?: string },
+  UIDataTypes,
+  InferUITools<Required<ChatTools>>
 >

@@ -2,7 +2,7 @@ import { anthropic } from "@ai-sdk/anthropic"
 import { Daytona, type Sandbox } from "@daytona/sdk"
 import { parseEnv } from "@neon/env"
 import { chat } from "@trigger.dev/sdk/ai"
-import { stepCountIs } from "ai"
+import { hasToolCall, stepCountIs } from "ai"
 import { and, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/node-postgres"
 import { z } from "zod"
@@ -10,7 +10,12 @@ import { z } from "zod"
 import * as schema from "@/db/schema"
 import config from "@/neon"
 
-import { sandboxTools, type ChatUIMessage } from "./tools"
+import {
+  handoffTool,
+  sandboxTools,
+  type ChatTools,
+  type ChatUIMessage,
+} from "./tools"
 
 // Its own clients, since "@/db" and "@/lib/daytona" are guarded by
 // server-only, which throws outside Next.
@@ -33,6 +38,26 @@ async function getChatBot(chatId: string, botId: string) {
   })
   if (!member) throw new Error(`Bot ${botId} isn't in chat ${chatId}`)
   return member.bot
+}
+
+// The chat and the bot answering this turn, plus the bot's teammates: the
+// chat's other bots, which group chats can hand off to.
+async function getTurnContext(chatId: string, botId: string) {
+  const row = await db.query.chats.findFirst({
+    columns: { kind: true, name: true },
+    where: eq(schema.chats.id, chatId),
+    with: {
+      members: {
+        columns: {},
+        orderBy: (m, { asc }) => asc(m.joinedAt),
+        with: { bot: true },
+      },
+    },
+  })
+  const bot = row?.members.find((m) => m.bot.id === botId)?.bot
+  if (!row || !bot) throw new Error(`Bot ${botId} isn't in chat ${chatId}`)
+  const teammates = row.members.map((m) => m.bot).filter((b) => b.id !== botId)
+  return { chat: row, bot, teammates }
 }
 
 // Resolves the bot's sandbox and its desktop on first use, at most once each.
@@ -61,7 +86,11 @@ function lazySandbox(chatId: string, botId: string) {
   return { getSandbox, getDesktop }
 }
 
-function systemPrompt(bot: typeof schema.bots.$inferSelect) {
+function systemPrompt({
+  chat,
+  bot,
+  teammates,
+}: Awaited<ReturnType<typeof getTurnContext>>) {
   return [
     `You are ${bot.name}, an AI teammate. Your job: ${bot.job}.`,
     "You work alongside the person you're chatting with as a member of their team. Stay in character as " +
@@ -74,9 +103,29 @@ function systemPrompt(bot: typeof schema.bots.$inferSelect) {
     "Use your tools to work in the sandbox: run commands, read and write files, and operate its 1024x768 " +
       "desktop with the mouse and keyboard. Prefer commands and files when they can do the job. When you " +
       "use the desktop, look at the screen before acting and check it again afterwards to confirm the result.",
+    chat.kind === "group" && groupPrompt(chat.name, teammates),
   ]
     .filter(Boolean)
     .join("\n\n")
+}
+
+function groupPrompt(
+  name: string | null,
+  teammates: (typeof schema.bots.$inferSelect)[]
+) {
+  return [
+    `This is a group chat${name ? ` called "${name}"` : ""}. Besides the person, it has these teammates, ` +
+      "each an AI teammate like you with its own job and its own sandbox:\n" +
+      teammates.map((t) => `- ${t.name} (ID: ${t.id}): ${t.job}`).join("\n"),
+    "The person picks who answers each message, and this time it's you. Earlier assistant replies in this " +
+      "conversation may have been written by teammates rather than you: don't take credit for their work, " +
+      "and remember that files they made live in their sandboxes, not yours.",
+    "Besides your sandbox tools, you have a handoff tool. If the person's latest request clearly belongs to " +
+      "a teammate's job rather than yours, call handoff with their ID instead of answering, and they answer " +
+      "next in your place. Don't hand off what you can do well yourself, and never hand a request back to " +
+      "the teammate who just handed it to you.",
+    "If a teammate has just handed the request to you, answer the person's latest message yourself.",
+  ].join("\n\n")
 }
 
 // The conversation is kept in the default transcript storage, keyed by chatId.
@@ -87,11 +136,24 @@ export const chatAgent = chat
   .withClientData({ schema: z.object({ botId: z.string() }) })
   .agent({
     id: "chat",
-    tools: ({ chatId, clientData }) =>
-      sandboxTools(lazySandbox(chatId, clientData!.botId)),
+    tools: async ({ chatId, clientData }): Promise<ChatTools> => {
+      const { botId } = clientData!
+      const context = await getTurnContext(chatId, botId)
+      const tools = sandboxTools(lazySandbox(chatId, botId))
+      return context.chat.kind === "group"
+        ? { ...tools, handoff: handoffTool(context.teammates) }
+        : tools
+    },
+    // After a handoff the client sends this action with the teammate as its
+    // bot, which runs a turn answered by them.
+    actionSchema: z.object({ type: z.literal("handoff") }),
+    onAction: () => chat.turn(),
     // Loaded every turn so edits to the bot apply to the next message.
     onTurnStart: async ({ chatId, clientData }) => {
-      chat.prompt.set(systemPrompt(await getChatBot(chatId, clientData!.botId)))
+      const { botId } = clientData!
+      chat.prompt.set(systemPrompt(await getTurnContext(chatId, botId)))
+      // Stamps the reply with its bot, so the client shows who wrote it.
+      chat.setUIMessageStreamOptions({ messageMetadata: () => ({ botId }) })
     },
     run: async ({ messages, tools, signal, streamText }) =>
       streamText({
@@ -99,6 +161,7 @@ export const chatAgent = chat
         messages,
         tools,
         abortSignal: signal,
-        stopWhen: stepCountIs(50),
+        // A handoff ends the turn; the teammate answers in the next one.
+        stopWhen: [stepCountIs(50), hasToolCall("handoff")],
       }),
   })
