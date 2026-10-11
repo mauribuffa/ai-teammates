@@ -8,8 +8,9 @@ import type { z } from "zod"
 
 import { db } from "@/db"
 import { bots, chatMembers, chats, insertBotSchema } from "@/db/schema"
+import { daytona } from "@/lib/daytona"
 
-// Creates the bot together with its direct chat, all or nothing.
+// Creates the bot together with its direct chat and sandbox, all or nothing.
 export async function createBot(input: z.input<typeof insertBotSchema>) {
   const { userId } = await auth.protect()
 
@@ -19,15 +20,30 @@ export async function createBot(input: z.input<typeof insertBotSchema>) {
   const botId = nanoid()
   const chatId = nanoid()
 
-  const bot = await db.transaction(async (tx) => {
-    const [bot] = await tx
-      .insert(bots)
-      .values({ ...values, id: botId, instructions: values.instructions || null, userId })
-      .returning()
-    await tx.insert(chats).values({ id: chatId, userId, kind: "direct" })
-    await tx.insert(chatMembers).values({ chatId, botId })
-    return bot
-  })
+  const sandbox = await daytona.create({ labels: { botId, userId } })
+
+  let bot
+  try {
+    bot = await db.transaction(async (tx) => {
+      const [bot] = await tx
+        .insert(bots)
+        .values({
+          ...values,
+          id: botId,
+          instructions: values.instructions || null,
+          sandboxId: sandbox.id,
+          userId,
+        })
+        .returning()
+      await tx.insert(chats).values({ id: chatId, userId, kind: "direct" })
+      await tx.insert(chatMembers).values({ chatId, botId })
+      return bot
+    })
+  } catch (error) {
+    // Don't leave an orphaned sandbox behind.
+    await daytona.delete(sandbox).catch(() => {})
+    throw error
+  }
 
   revalidatePath("/")
 
@@ -52,7 +68,7 @@ export async function updateBot(id: string, input: z.input<typeof insertBotSchem
   return bot
 }
 
-// Deletes the bot together with its direct chats, which would be left empty.
+// Deletes the bot together with its sandbox and its direct chats, which would be left empty.
 export async function deleteBot(id: string) {
   const { userId } = await auth.protect()
 
@@ -72,6 +88,10 @@ export async function deleteBot(id: string) {
     if (!bot) throw new Error("Bot not found")
     return bot
   })
+
+  if (bot.sandboxId) {
+    await daytona.delete(await daytona.get(bot.sandboxId))
+  }
 
   revalidatePath("/", "layout")
 
