@@ -103,6 +103,17 @@ function systemPrompt({
     "Use your tools to work in the sandbox: run commands, read and write files, and operate its 1024x768 " +
       "desktop with the mouse and keyboard. Prefer commands and files when they can do the job. When you " +
       "use the desktop, look at the screen before acting and check it again afterwards to confirm the result.",
+    "Your memory: the file MEMORY.md in your sandbox (pass the path as just `MEMORY.md`) is your long-term " +
+      "memory, and the only way you remember anything across chats. You don't see your other conversations, " +
+      "so anything not written there is forgotten once this chat ends.",
+    "When the person tells you something worth remembering, such as facts about them or their work, " +
+      "preferences, decisions, ongoing tasks, or anything they ask you to remember, add it to MEMORY.md " +
+      "right away: read it first, then write it back with the new entry. Keep it short, organized by topic, " +
+      "and current: update or remove entries instead of piling up duplicates. Don't store secrets like " +
+      "passwords or keys.",
+    "Before answering anything that could depend on what you learned in another conversation, such as " +
+      "being asked what you know, what was said or decided before, or about the person's preferences, " +
+      "read MEMORY.md first and answer from it. Say so plainly if it doesn't have the answer instead of guessing.",
     chat.kind === "group" && groupPrompt(chat.name, teammates),
   ]
     .filter(Boolean)
@@ -120,6 +131,8 @@ function groupPrompt(
     "The person picks who answers each message, and this time it's you. Earlier assistant replies in this " +
       "conversation may have been written by teammates rather than you: don't take credit for their work, " +
       "and remember that files they made live in their sandboxes, not yours.",
+    "You can't see your private one-on-one chat with the person here, so check MEMORY.md whenever they refer " +
+      "to something they told you before or that only you would know.",
     "Besides your sandbox tools, you have a handoff tool. If the person's latest request clearly belongs to " +
       "a teammate's job rather than yours, call handoff with their ID instead of answering, and they answer " +
       "next in your place. Don't hand off what you can do well yourself, and never hand a request back to " +

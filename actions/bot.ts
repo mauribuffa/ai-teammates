@@ -24,6 +24,9 @@ export async function createBot(input: z.input<typeof insertBotSchema>) {
 
   let bot
   try {
+    // The bot's long-term memory, which it keeps up to date itself. Created
+    // with a command, since the SDK's file uploads break under Next's runtime.
+    await sandbox.process.executeCommand("touch MEMORY.md")
     bot = await db.transaction(async (tx) => {
       const [bot] = await tx
         .insert(bots)
