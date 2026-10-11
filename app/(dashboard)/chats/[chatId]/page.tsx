@@ -4,16 +4,18 @@ import { Chat } from "@/components/chat"
 import { ChatHeader } from "@/components/chat-header"
 import { DesktopPanel, DesktopPanelProvider } from "@/components/desktop-panel"
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import { getChat } from "@/queries/chats"
+import { getBots, getChat } from "@/queries/chats"
 
 export default async function Page(props: PageProps<"/chats/[chatId]">) {
   const { chatId } = await props.params
   const chat = await getChat(chatId)
   if (!chat) notFound()
+  // Only group chats need them, to pick members from.
+  const bots = chat.kind === "group" ? await getBots() : []
 
   const main = (
     <div className="flex h-full flex-col">
-      <ChatHeader chat={chat} />
+      <ChatHeader chat={chat} bots={bots} />
       <Chat chatId={chat.id} bots={chat.bots} />
     </div>
   )

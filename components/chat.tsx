@@ -78,7 +78,11 @@ const toolTitles: Record<ToolPart["type"], string> = {
 export function Chat({ chatId, bots }: { chatId: string; bots: Bot[] }) {
   // The bot that answers the next message. Sent with every turn, so picking
   // another one switches who replies.
-  const [botId, setBotId] = useState(bots[0].id)
+  const [pickedBotId, setBotId] = useState(bots[0].id)
+  // Falls back to the first bot if the picked one was removed from the group.
+  const botId = bots.some((bot) => bot.id === pickedBotId)
+    ? pickedBotId
+    : bots[0].id
   const transport = useTriggerChatTransport<typeof chatAgent>({
     task: "chat",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),

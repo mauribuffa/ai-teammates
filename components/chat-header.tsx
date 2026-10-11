@@ -3,20 +3,24 @@
 import { MonitorIcon } from "lucide-react"
 
 import { BotDialog } from "@/components/bot-dialog"
-import { GroupAvatar } from "@/components/chat-avatar"
 import { useDesktopPanel } from "@/components/desktop-panel"
+import { GroupChatDialog } from "@/components/group-chat-dialog"
 import { Button } from "@/components/ui/button"
-import type { ChatDetail } from "@/queries/chats"
+import type { BotSummary, ChatDetail } from "@/queries/chats"
 
 // Group chats have no desktop, so only direct chats get the panel toggle.
-export function ChatHeader({ chat }: { chat: ChatDetail }) {
+// bots are all the user's bots, which a group chat's members are picked from.
+export function ChatHeader({
+  chat,
+  bots,
+}: {
+  chat: ChatDetail
+  bots: BotSummary[]
+}) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
       {chat.kind === "group" ? (
-        <div className="flex min-w-0 items-center gap-2 text-sm">
-          <GroupAvatar bots={chat.bots} className="size-6" />
-          <span className="truncate font-medium">{chat.name}</span>
-        </div>
+        <GroupChatDialog chat={chat} bots={bots} />
       ) : (
         <>
           <BotDialog bot={chat.bots[0]} />

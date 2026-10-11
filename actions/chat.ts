@@ -77,3 +77,67 @@ export async function createGroupChat(
 
   return created
 }
+
+// Renames the group chat and replaces its bots, which must all be the user's.
+export async function updateGroupChat(
+  id: string,
+  input: z.input<typeof insertGroupChatSchema>
+) {
+  const { userId } = await clerkAuth.protect()
+
+  const values = insertGroupChatSchema.parse(input)
+  const botIds = [...new Set(values.botIds)]
+
+  const owned = await db
+    .select({ id: bots.id })
+    .from(bots)
+    .where(and(inArray(bots.id, botIds), eq(bots.userId, userId)))
+  if (owned.length !== botIds.length) throw new Error("Bot not found")
+
+  const updated = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(chats)
+      .set({ name: values.name })
+      .where(
+        and(eq(chats.id, id), eq(chats.userId, userId), eq(chats.kind, "group"))
+      )
+      .returning()
+    if (!updated) throw new Error("Chat not found")
+    // Members are ordered by joinedAt, so re-add them all spaced out to keep
+    // the picked order.
+    await tx.delete(chatMembers).where(eq(chatMembers.chatId, id))
+    const now = Date.now()
+    await tx
+      .insert(chatMembers)
+      .values(
+        botIds.map((botId, i) => ({
+          chatId: id,
+          botId,
+          joinedAt: new Date(now + i),
+        }))
+      )
+    return updated
+  })
+
+  // The name and faces show in the sidebar and the chat header.
+  revalidatePath("/", "layout")
+
+  return updated
+}
+
+// Deletes the group chat. Its bots stay, along with their direct chats.
+export async function deleteGroupChat(id: string) {
+  const { userId } = await clerkAuth.protect()
+
+  const [deleted] = await db
+    .delete(chats)
+    .where(
+      and(eq(chats.id, id), eq(chats.userId, userId), eq(chats.kind, "group"))
+    )
+    .returning()
+  if (!deleted) throw new Error("Chat not found")
+
+  revalidatePath("/", "layout")
+
+  return deleted
+}
